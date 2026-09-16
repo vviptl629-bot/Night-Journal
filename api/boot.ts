@@ -7,6 +7,7 @@ import { createContext } from "./context";
 import { env } from "./lib/env";
 import { authenticateRequest } from "./auth/session";
 import { createRegisterHandler, createLoginHandler } from "./auth/password";
+import { createDeleteAccountHandler } from "./auth/account";
 import { Paths } from "@contracts/constants";
 import { saveUploadedFile, getFilePath } from "./lib/upload";
 import { startScheduler } from "./lib/scheduler";
@@ -18,6 +19,9 @@ const app = new Hono<{ Bindings: HttpBindings }>();
 app.use(bodyLimit({ maxSize: 50 * 1024 * 1024 }));
 app.post(Paths.authRegister, createRegisterHandler());
 app.post(Paths.authLogin, createLoginHandler());
+// Delete-my-account. Accepts both verbs so clients can call it either way.
+app.delete(Paths.authAccount, createDeleteAccountHandler());
+app.post(Paths.authAccount, createDeleteAccountHandler());
 
 // ── File upload endpoint ──
 app.post("/api/upload/file", async (c) => {

@@ -57,6 +57,29 @@ export async function createLocalUser(data: {
   return findUserByUnionId(unionId);
 }
 
+/**
+ * Permanently delete a local account and every row that belongs to it.
+ *
+ * Used by "delete my account" (POST/DELETE /api/auth/account). Tables are
+ * removed child-first so no orphans are left behind, and the username is
+ * freed up for re-registration.
+ */
+export async function deleteUserCascade(userId: number) {
+  const db = getDb();
+  const owned = eq(schema.users.id, userId);
+
+  // Child rows first (attachments reference entries, versions reference diaries)
+  await db.delete(schema.entryAttachments).where(eq(schema.entryAttachments.userId, userId));
+  await db.delete(schema.diaryVersions).where(eq(schema.diaryVersions.userId, userId));
+  await db.delete(schema.shortTermMemories).where(eq(schema.shortTermMemories.userId, userId));
+  await db.delete(schema.userProfiles).where(eq(schema.userProfiles.userId, userId));
+  await db.delete(schema.modelPresets).where(eq(schema.modelPresets.userId, userId));
+  await db.delete(schema.aiSettings).where(eq(schema.aiSettings.userId, userId));
+  await db.delete(schema.diaries).where(eq(schema.diaries.userId, userId));
+  await db.delete(schema.entries).where(eq(schema.entries.userId, userId));
+  await db.delete(schema.users).where(owned);
+}
+
 export async function upsertUser(data: InsertUser) {
   const values = { ...data };
   const updateSet: Partial<InsertUser> = {

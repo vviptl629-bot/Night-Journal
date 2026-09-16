@@ -13,4 +13,5 @@ export const Paths = {
   register: "/register",
   authRegister: "/api/auth/register",
   authLogin: "/api/auth/login",
+  authAccount: "/api/auth/account",
 } as const;

@@ -512,9 +512,38 @@ function AccountTab() {
   const { user, isAuthenticated, isLoading, logout } = useAuth()
   const navigate = useNavigate()
 
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
   const handleLogin = () => {
     navigate(LOGIN_PATH)
   }
+
+  const handleDeleteAccount = useCallback(async () => {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      const res = await fetch('/api/auth/account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: deletePassword }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        setDeleteError(data.error ?? '删除失败，请稍后再试')
+        return
+      }
+      setDeleteOpen(false)
+      setDeletePassword('')
+      logout()
+    } catch {
+      setDeleteError('网络异常，请稍后再试')
+    } finally {
+      setDeleting(false)
+    }
+  }, [deletePassword, logout])
 
   return (
     <motion.div
@@ -646,6 +675,88 @@ function AccountTab() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Danger Zone — delete account */}
+      {!isLoading && isAuthenticated && (
+        <motion.div variants={cardItem}>
+          <Card
+            className="rounded-2xl border-0 shadow-none"
+            style={{ backgroundColor: 'var(--bg-surface)' }}
+          >
+            <CardContent className="p-4">
+              <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="w-full gap-2"
+                    style={{ color: 'var(--error)' }}
+                  >
+                    <Trash2 size={18} />
+                    删除账号
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent
+                  className="rounded-xl border-0"
+                  style={{ backgroundColor: 'var(--bg-elevated)' }}
+                >
+                  <AlertDialogHeader>
+                    <AlertDialogTitle style={{ color: 'var(--text-primary)' }}>
+                      删除账号
+                    </AlertDialogTitle>
+                    <AlertDialogDescription style={{ color: 'var(--text-secondary)' }}>
+                      此操作不可恢复。你的全部碎片、日记、图片与 AI 配置都会被永久删除，用户名会被释放（可以重新注册）。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="flex flex-col gap-2 py-2">
+                    <Label htmlFor="delete-password" style={{ color: 'var(--text-secondary)' }}>
+                      输入当前密码以确认
+                    </Label>
+                    <Input
+                      id="delete-password"
+                      type="password"
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                      autoComplete="current-password"
+                      placeholder="当前密码"
+                    />
+                    {deleteError && (
+                      <p className="text-xs" style={{ color: 'var(--error)' }}>
+                        {deleteError}
+                      </p>
+                    )}
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel
+                      className="rounded-lg border-0"
+                      style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-secondary)' }}
+                      onClick={() => {
+                        setDeleteError(null)
+                        setDeletePassword('')
+                      }}
+                    >
+                      取消
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void handleDeleteAccount()
+                      }}
+                      disabled={deleting}
+                      className="rounded-lg"
+                      style={{ backgroundColor: 'var(--error)', color: 'hsl(var(--destructive-foreground))' }}
+                    >
+                      {deleting ? '删除中…' : '永久删除'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <p className="mt-2 px-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                删除后用户名会被释放，可以重新注册使用。
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
     </motion.div>
   )
 }
