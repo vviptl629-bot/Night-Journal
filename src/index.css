@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Night Journal — Business Mono (Light) */
+    --bg-primary: #FAFAFA;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #F4F4F5;
+    --text-primary: #0A0A0A;
+    --text-secondary: #52525B;
+    --text-tertiary: #A1A1AA;
+    --accent: #111111;
+    --accent-hover: #000000;
+    --accent-soft: rgba(17,17,17,0.06);
+    --divider: #E4E4E7;
+    --success: #3F6212;
+    --error: #B91C1C;
+    --mood-happy: #D4A853;
+    --mood-calm: #7BA3A0;
+    --mood-sad: #8B9BB4;
+    --mood-tired: #A08E8E;
+    --mood-excited: #C4826A;
+    --mood-anxious: #9B8AA5;
+
+    /* Shadcn compatibility */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 4%;
+    --primary: 0 0% 7%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 4%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 240 4% 42%;
+    --accent-hsl: 0 0% 7%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 0 0% 7%;
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    /* Night Journal — Business Mono (Dark) */
+    --bg-primary: #0A0A0B;
+    --bg-surface: #18181B;
+    --bg-elevated: #27272A;
+    --text-primary: #F4F4F5;
+    --text-secondary: #A1A1AA;
+    --text-tertiary: #71717A;
+    --accent: #EDEDED;
+    --accent-hover: #FFFFFF;
+    --accent-soft: rgba(237,237,237,0.10);
+    --divider: #27272A;
+    --success: #84CC6B;
+    --error: #F87171;
+
+    /* Shadcn dark compatibility */
+    --background: 240 6% 4%;
+    --foreground: 0 0% 96%;
+    --card: 240 6% 9%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 6% 9%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 93%;
+    --primary-foreground: 240 6% 4%;
+    --secondary: 240 4% 14%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 5% 58%;
+    --accent-hsl: 0 0% 93%;
+    --accent-foreground: 240 6% 4%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 96%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 0 0% 93%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 400ms ease, color 300ms ease;
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Hide scrollbar but keep scroll functionality */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
