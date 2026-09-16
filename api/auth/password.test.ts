@@ -97,7 +97,7 @@ describe("POST /api/auth/register — input validation", () => {
     });
     expect(res.status).toBe(400);
     const body = await res.json() as { error: string };
-    expect(body.error).toMatch(/username/i);
+    expect(body.error).toMatch(/用户名/);
   });
 
   it("rejects username longer than 64 chars (400)", async () => {
@@ -196,7 +196,7 @@ describe("POST /api/auth/register — duplicate username", () => {
 
     expect(res.status).toBe(409);
     const body = await res.json() as { error: string };
-    expect(body.error).toMatch(/taken/i);
+    expect(body.error).toMatch(/已经有人用了/);
   });
 });
 
@@ -256,7 +256,7 @@ describe("POST /api/auth/login — wrong password", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json() as { error: string };
-    expect(body.error).toMatch(/invalid/i);
+    expect(body.error).toMatch(/不正确/);
   });
 });
 
@@ -272,7 +272,7 @@ describe("POST /api/auth/login — unknown username", () => {
     expect(res.status).toBe(401);
     const body = await res.json() as { error: string };
     // Same generic message as wrong-password — does not reveal whether username exists
-    expect(body.error).toMatch(/invalid/i);
+    expect(body.error).toMatch(/不正确/);
     expect(body.error).not.toMatch(/not found/i);
     expect(body.error).not.toMatch(/does not exist/i);
   });

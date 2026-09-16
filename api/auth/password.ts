@@ -43,13 +43,13 @@ function validateInput(
 ): string | null {
   const name = normalizeUsername(username);
   if (typeof password !== "string" || name.length < 1) {
-    return "username and password are required";
+    return "请填写用户名和密码";
   }
   if (name.length > 64) {
-    return "username must be 64 characters or fewer";
+    return "用户名最多 64 个字符";
   }
-  if (typeof password === "string" && password.length < 1) {
-    return "password is required";
+  if (password.length < 1) {
+    return "请填写密码";
   }
   return null;
 }
@@ -75,7 +75,7 @@ export function createRegisterHandler() {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: "请求格式有误" }, 400);
     }
 
     const { username, password, name } = body as Record<string, unknown>;
@@ -89,7 +89,7 @@ export function createRegisterHandler() {
     // Check if username is already taken (case-insensitive)
     const existing = await findUserByUsername(cleanUsername);
     if (existing) {
-      return c.json({ error: "Username already taken" }, 409);
+      return c.json({ error: "这个用户名已经有人用了，换一个吧" }, 409);
     }
 
     const passwordHash = await bcrypt.hash(
@@ -103,7 +103,7 @@ export function createRegisterHandler() {
     });
 
     if (!user) {
-      return c.json({ error: "Failed to create user" }, 500);
+      return c.json({ error: "账号创建失败，请稍后再试" }, 500);
     }
 
     const token = await signSessionToken({
@@ -127,7 +127,7 @@ export function createLoginHandler() {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: "请求格式有误" }, 400);
     }
 
     const { username, password } = body as Record<string, unknown>;
@@ -147,7 +147,7 @@ export function createLoginHandler() {
     );
 
     if (!user || !match) {
-      return c.json({ error: "Invalid username or password" }, 401);
+      return c.json({ error: "用户名或密码不正确" }, 401);
     }
 
     const token = await signSessionToken({

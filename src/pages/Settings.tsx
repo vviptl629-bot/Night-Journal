@@ -392,12 +392,13 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-[100dvh]" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>
       {/* ── Header ── */}
       <header
-        className="sticky top-0 z-20"
+        className="relative"
         style={{
           backgroundColor: 'var(--bg-primary)',
-          padding: '20px 16px 16px',
+          padding: '20px 16px 14px',
         }}
       >
         <motion.div
@@ -422,30 +423,29 @@ export default function SettingsPage() {
 
       {/* ── Tab Navigation ── */}
       <div
-        className="sticky top-[60px] z-10"
+        className="sticky top-0 z-20"
         style={{
           backgroundColor: 'var(--bg-primary)',
           borderBottom: '1px solid var(--divider)',
         }}
       >
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>
-          <TabsList
+        <TabsList
             ref={tabsListRef}
-            className="relative flex w-full justify-start gap-0 rounded-none bg-transparent p-0 h-12 overflow-x-auto no-scrollbar"
+            className="relative flex w-full justify-start gap-0.5 rounded-none bg-transparent px-2 py-2 h-auto overflow-x-auto no-scrollbar"
           >
             {TABS.map((tab) => (
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
-                className="relative flex-shrink-0 min-w-[72px] rounded-none border-0 border-b-2 border-transparent bg-transparent px-2 py-0 text-[12px] font-medium data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                className="relative shrink-0 flex flex-col items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent px-2 py-1 text-[11px] font-medium leading-none data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                 style={{
                   color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-tertiary)',
                   transition: 'color 200ms ease',
-                  height: '48px',
+                  height: '58px',
                 }}
               >
-                <tab.Icon size={16} className="mr-1" />
-                {tab.label}
+                <tab.Icon size={18} />
+                <span className="whitespace-nowrap">{tab.label}</span>
                 {activeTab === tab.id && (
                   <motion.div
                     layoutId="settings-tab-indicator"
@@ -464,9 +464,10 @@ export default function SettingsPage() {
                 <ChevronRight size={16} style={{ color: 'var(--text-tertiary)' }} />
               </div>
             )}
-          </TabsList>
+        </TabsList>
+      </div>
 
-          {/* ── Tab Contents ── */}
+      {/* ── Tab Contents ── */}
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -496,8 +497,7 @@ export default function SettingsPage() {
               </TabsContent>
             </motion.div>
           </AnimatePresence>
-        </Tabs>
-      </div>
+      </Tabs>
 
       {/* Bottom clearance */}
       <div className="h-[100px]" />
