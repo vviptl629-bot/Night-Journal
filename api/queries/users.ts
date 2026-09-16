@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as schema from "@db/schema";
 import type { InsertUser } from "@db/schema";
 import { getDb } from "./connection";
@@ -13,11 +13,15 @@ export async function findUserByUnionId(unionId: string) {
   return rows.at(0);
 }
 
+/**
+ * Lookup used by login/register for local accounts.
+ * Case-insensitive so "Alan" and "alan" resolve to the same user.
+ */
 export async function findUserByUsername(username: string) {
   const rows = await getDb()
     .select()
     .from(schema.users)
-    .where(eq(schema.users.username, username))
+    .where(sql`lower(${schema.users.username}) = ${username.trim().toLowerCase()}`)
     .limit(1);
   return rows.at(0);
 }

@@ -57,10 +57,14 @@ export default function Register() {
               <Input
                 id="reg-username"
                 type="text"
-                placeholder="3–32 位字母、数字、_ 或 -"
+                placeholder="你的英文名，如 Alex"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={64}
                 required
               />
             </div>
@@ -70,10 +74,12 @@ export default function Register() {
               <Input
                 id="reg-password"
                 type="password"
-                placeholder="至少 8 位"
+                placeholder="密码，长度不限"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
+                autoCapitalize="off"
+                autoCorrect="off"
                 required
               />
             </div>

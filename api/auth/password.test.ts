@@ -90,9 +90,9 @@ describe("POST /api/auth/register — input validation", () => {
     expect(res.status).toBe(400);
   });
 
-  it("rejects username with invalid characters (400)", async () => {
+  it("rejects empty or whitespace-only username (400)", async () => {
     const res = await post(buildRegisterApp(), "/api/auth/register", {
-      username: "bad username!",
+      username: "   ",
       password: "password1",
     });
     expect(res.status).toBe(400);
@@ -100,30 +100,45 @@ describe("POST /api/auth/register — input validation", () => {
     expect(body.error).toMatch(/username/i);
   });
 
-  it("rejects username that is too short (400)", async () => {
+  it("rejects username longer than 64 chars (400)", async () => {
     const res = await post(buildRegisterApp(), "/api/auth/register", {
-      username: "ab",
+      username: "a".repeat(65),
       password: "password1",
     });
     expect(res.status).toBe(400);
   });
 
-  it("rejects password shorter than 8 chars (400)", async () => {
-    const res = await post(buildRegisterApp(), "/api/auth/register", {
-      username: "alice",
-      password: "short",
+  it("accepts an English name with spaces, dots and any password length", async () => {
+    vi.mocked(findUserByUsername).mockResolvedValue(undefined);
+    vi.mocked(createLocalUser).mockResolvedValue({
+      id: 1,
+      unionId: "local:Alan W.",
+      username: "Alan W.",
+      passwordHash: HASHED_PASSWORD,
+      name: "Alan W.",
+      email: null,
+      avatar: null,
+      role: "user",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignInAt: new Date(),
     });
-    expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
-    expect(body.error).toMatch(/password/i);
-  });
 
-  it("rejects password longer than 72 chars (400)", async () => {
-    const res = await post(buildRegisterApp(), "/api/auth/register", {
-      username: "alice",
-      password: "a".repeat(73),
+    const long = await post(buildRegisterApp(), "/api/auth/register", {
+      username: "  Alan W.  ",
+      password: "a".repeat(120),
     });
-    expect(res.status).toBe(400);
+    expect(long.status).toBe(201);
+    // username is trimmed and inner whitespace collapsed before storage
+    expect(vi.mocked(createLocalUser).mock.calls.at(-1)?.[0].username).toBe(
+      "Alan W.",
+    );
+
+    const short = await post(buildRegisterApp(), "/api/auth/register", {
+      username: "Bo",
+      password: "1234",
+    });
+    expect(short.status).toBe(201);
   });
 });
 

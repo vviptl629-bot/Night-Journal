@@ -51,10 +51,13 @@ export default function Login() {
               <Input
                 id="login-username"
                 type="text"
-                placeholder="用户名"
+                placeholder="你的英文名"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
                 required
               />
             </div>
