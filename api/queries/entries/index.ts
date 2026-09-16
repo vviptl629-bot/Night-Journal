@@ -97,6 +97,47 @@ export async function updateEntry(
   return findEntryById(userId, entryId);
 }
 
+/**
+ * Entries touched at or after `since` — the backbone of cross-device sync.
+ *
+ * Soft-deleted rows are intentionally included: a device that was offline
+ * while another device deleted an entry must learn about the tombstone,
+ * otherwise the deleted fragment resurrects on the next local cache read.
+ * Callers filter on `deletedAt` themselves depending on the view.
+ */
+export async function findEntriesSince(userId: number, since: Date) {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(entries)
+    .where(and(eq(entries.userId, userId), gte(entries.updatedAt, since)))
+    .orderBy(desc(entries.createdAt));
+
+  const withAttachments = await Promise.all(
+    rows.map(async (entry) => {
+      const attachments = await db
+        .select()
+        .from(entryAttachments)
+        .where(eq(entryAttachments.entryId, entry.id));
+      return { ...entry, attachments };
+    }),
+  );
+
+  return withAttachments;
+}
+
+/** Most recent `updatedAt` across a user's entries, or null when empty. */
+export async function findLatestEntryUpdate(userId: number): Promise<Date | null> {
+  const db = getDb();
+  const row = await db
+    .select({ updatedAt: entries.updatedAt })
+    .from(entries)
+    .where(eq(entries.userId, userId))
+    .orderBy(desc(entries.updatedAt))
+    .limit(1);
+  return row.at(0)?.updatedAt ?? null;
+}
+
 export async function findEntriesByMonth(userId: number, year: number, month: number) {
   const db = getDb();
   const { start, end } = monthRange(year, month);
@@ -130,8 +171,11 @@ export async function findEntriesByMonth(userId: number, year: number, month: nu
 
 export async function softDeleteEntry(userId: number, entryId: number) {
   await getDb()
+    // updatedAt is bumped explicitly (not relying on $onUpdate) so the
+    // tombstone always crosses the sync watermark — otherwise a deletion made
+    // on one device would never reach another device.
     .update(entries)
-    .set({ deletedAt: new Date() })
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(
       and(
         eq(entries.id, entryId),

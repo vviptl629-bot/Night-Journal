@@ -8,6 +8,12 @@ import { env } from "./lib/env";
 import { authenticateRequest } from "./auth/session";
 import { createRegisterHandler, createLoginHandler } from "./auth/password";
 import { createDeleteAccountHandler } from "./auth/account";
+import {
+  createBackupListHandler,
+  createBackupNowHandler,
+  createBackupDownloadHandler,
+  createDataExportHandler,
+} from "./backup";
 import { Paths } from "@contracts/constants";
 import { saveUploadedFile, getFilePath } from "./lib/upload";
 import { startScheduler } from "./lib/scheduler";
@@ -22,6 +28,12 @@ app.post(Paths.authLogin, createLoginHandler());
 // Delete-my-account. Accepts both verbs so clients can call it either way.
 app.delete(Paths.authAccount, createDeleteAccountHandler());
 app.post(Paths.authAccount, createDeleteAccountHandler());
+
+// ── Backups (snapshot list / create / download) ──
+app.get("/api/backup/list", createBackupListHandler());
+app.post("/api/backup/now", createBackupNowHandler());
+app.get("/api/backup/download", createBackupDownloadHandler());
+app.get("/api/backup/export", createDataExportHandler());
 
 // ── File upload endpoint ──
 app.post("/api/upload/file", async (c) => {
@@ -109,9 +121,21 @@ if (env.isProduction) {
   const { serveStaticFiles } = await import("./lib/vite");
   const { ensureSchema } = await import("./lib/ensure-schema");
 
+  // 重新部署会替换整个项目目录，data/ 里的库可能已经被抹掉。
+  // 建表之前先尝试从项目目录之外的备份恢复，避免"发一次版数据就没了"。
+  const { restoreDatabase, startAutoSnapshot } = await import("./lib/persist");
+  const { getSqliteDriver } = await import("./queries/connection");
+  const restored = restoreDatabase(env.databaseFile);
+  if (restored) {
+    console.log("[boot] 数据库已从持久备份恢复");
+  }
+
   // 建表必须在开始对外服务之前完成，否则第一批请求会打到空库。
   const driverKind = ensureSchema();
   console.log(`[boot] SQLite schema ready (driver: ${driverKind})`);
+
+  // 定时快照 + 退出前快照，保证随时有可恢复点
+  startAutoSnapshot(env.databaseFile, getSqliteDriver);
 
   serveStaticFiles(app);
 

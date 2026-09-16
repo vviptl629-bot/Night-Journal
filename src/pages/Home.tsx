@@ -6,6 +6,7 @@ import {
   ImagePlus,
   Sun,
   Cloud,
+  CloudOff,
   CloudRain,
   Moon,
   Zap,
@@ -19,16 +20,19 @@ import {
   Pencil,
   Trash2,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
+import { useSync } from '@/hooks/useSync'
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight'
 import { useSearchParams } from 'react-router'
 import { Calendar } from '@/components/ui/calendar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { format, parseISO } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
+import type { CachedEntry } from '@/lib/offline-db'
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -50,6 +54,8 @@ interface Fragment {
   attachmentMetas?: AttachmentMeta[]
   mood?: MoodKey
   timestamp: string
+  /** True for entries written offline and not yet on the server. */
+  pending?: boolean
 }
 
 interface UploadedAttachment {
@@ -60,6 +66,14 @@ interface UploadedAttachment {
 }
 
 type MoodKey = string
+
+/** An offline write shown optimistically until it reaches the server. */
+interface LocalPending {
+  opId: string
+  content: string
+  mood?: string
+  time: string
+}
 
 // ──────────────────────────────────────────────────────────
 // Constants
@@ -323,6 +337,19 @@ function FragmentCard({
                 <Trash2 size={16} />
               </button>
             </div>
+          )}
+          {fragment.pending && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-ui"
+              style={{
+                backgroundColor: 'var(--accent-soft)',
+                color: 'var(--accent)',
+              }}
+              title="离线时保存，联网后会自动同步到服务器"
+            >
+              <CloudOff size={10} />
+              待同步
+            </span>
           )}
           <span
             className="text-xs font-ui"
@@ -952,11 +979,30 @@ function getTodayDateString(): string {
 
 export default function Home() {
   const { isAuthenticated } = useAuth()
+  const sync = useSync()
   const utils = trpc.useUtils()
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // Snapshot of server entries kept on-device: renders instantly on cold
+  // start and keeps the day readable when there is no connection at all.
+  const [cachedEntries, setCachedEntries] = useState<CachedEntry[]>([])
+  const [localPending, setLocalPending] = useState<LocalPending[]>([])
+
   const activeDate = useMemo(() => getActiveDate(searchParams), [searchParams])
   const activeDateObj = useMemo(() => parseISO(activeDate), [activeDate])
+
+  // Re-read the on-device snapshot whenever the day changes or a sync lands.
+  useEffect(() => {
+    if (!isAuthenticated) return
+    sync.readCached(activeDate).then(setCachedEntries)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDate, sync.lastSyncAt, isAuthenticated])
+
+  // Once the queue drains the server owns these entries — drop the local
+  // optimistic copies so nothing renders twice.
+  useEffect(() => {
+    if (sync.pending === 0) setLocalPending([])
+  }, [sync.pending])
 
   // Load entries for the active date from the server.
   // Conditional polling: only refetch while at least one attachment is still
@@ -997,9 +1043,32 @@ export default function Home() {
       utils.entries.list.invalidate({ date: activeDate })
       toast.success('记录已保存')
     },
-    onError: () => {
-      console.error('[Home] Failed to create entry')
-      toast.error('保存失败，请重试')
+    onError: (_err, variables) => {
+      console.error('[Home] Failed to create entry — queueing for replay')
+      void sync
+        .enqueue({
+          kind: 'create',
+          contentText: variables.contentText,
+          moodLabel: variables.moodLabel,
+          entryDate: variables.entryDate,
+          clientSavedAt: new Date().toISOString(),
+        })
+        .then((opId) => {
+          if (opId) {
+            setLocalPending((prev) => [
+              ...prev,
+              {
+                opId,
+                content: variables.contentText,
+                mood: variables.moodLabel,
+                time: formatTime(new Date()),
+              },
+            ])
+            toast.success('已离线保存，联网后自动同步')
+          } else {
+            toast.error('保存失败，请重试')
+          }
+        })
     },
   })
 
@@ -1009,9 +1078,21 @@ export default function Home() {
       utils.entries.list.invalidate({ date: activeDate })
       toast.success('已更新')
     },
-    onError: () => {
-      console.error('[Home] Failed to update entry')
-      toast.error('更新失败，请重试')
+    onError: (_err, variables) => {
+      console.error('[Home] Failed to update entry — queueing for replay')
+      void sync
+        .enqueue({
+          kind: 'update',
+          entryId: variables.id,
+          contentText: variables.contentText,
+          moodLabel: variables.moodLabel,
+          clientSavedAt: new Date().toISOString(),
+        })
+        .then((opId) => {
+          toast[opId ? 'success' : 'error'](
+            opId ? '已离线保存，联网后自动同步' : '更新失败，请重试',
+          )
+        })
     },
   })
 
@@ -1021,9 +1102,19 @@ export default function Home() {
       utils.entries.list.invalidate({ date: activeDate })
       toast.success('已删除')
     },
-    onError: () => {
-      console.error('[Home] Failed to delete entry')
-      toast.error('删除失败，请重试')
+    onError: (_err, variables) => {
+      console.error('[Home] Failed to delete entry — queueing for replay')
+      void sync
+        .enqueue({
+          kind: 'delete',
+          entryId: variables.id,
+          clientSavedAt: new Date().toISOString(),
+        })
+        .then((opId) => {
+          toast[opId ? 'success' : 'error'](
+            opId ? '已离线记录，联网后自动同步' : '删除失败，请重试',
+          )
+        })
     },
   })
 
@@ -1137,7 +1228,46 @@ export default function Home() {
     [deleteEntry],
   )
 
-  const fragments = serverFragments
+  // On-device snapshot, used when the network answer is missing (offline) or
+  // not here yet (cold start) so the day never renders as empty by mistake.
+  const cachedFragments: Fragment[] = cachedEntries.map((e) => {
+    const urls = e.attachments?.map((a) => a.fileUrl).filter(Boolean)
+    const metas = e.attachments?.map((a) => ({
+      fileUrl: a.fileUrl,
+      visionStatus: a.visionStatus,
+      visionSummary: a.visionSummary ?? undefined,
+      visionModelUsed: a.visionModelUsed ?? undefined,
+    }))
+    return {
+      id: String(e.id),
+      type: e.hasImages ? (e.contentText ? 'mixed' : 'image') : 'text',
+      content: e.contentText || undefined,
+      images: urls && urls.length > 0 ? urls : undefined,
+      attachmentMetas: metas && metas.length > 0 ? metas : undefined,
+      mood: (e.moodLabel as MoodKey) || undefined,
+      timestamp: formatTime(e.createdAt),
+    }
+  })
+
+  // Offline writes, shown immediately with a "待同步" marker.
+  const localFragments: Fragment[] = localPending.map((p) => ({
+    id: `local-${p.opId}`,
+    type: 'text',
+    content: p.content,
+    mood: p.mood as MoodKey,
+    timestamp: p.time,
+    pending: true,
+  }))
+
+  const baseFragments =
+    serverEntries.length > 0 ? serverFragments : cachedFragments
+
+  const fragments = [
+    ...localFragments.filter(
+      (lf) => !baseFragments.some((bf) => bf.content === lf.content),
+    ),
+    ...baseFragments,
+  ]
 
   return (
     <div
@@ -1194,6 +1324,43 @@ export default function Home() {
           </AnimatePresence>
         </div>
       </motion.header>
+
+      {/* ── Sync banner — only when there is something to tell ── */}
+      <AnimatePresence>
+        {(!sync.online || sync.pending > 0 || sync.lastError) && (
+          <motion.button
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => void sync.syncNow()}
+            className="mx-4 mb-1 flex items-center gap-2 overflow-hidden rounded-xl px-3 py-2 text-left"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--divider)',
+              color: 'var(--text-secondary)',
+            }}
+            aria-label="同步状态"
+          >
+            {sync.syncing ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : sync.online ? (
+              <RefreshCw size={13} />
+            ) : (
+              <CloudOff size={13} />
+            )}
+            <span className="text-xs font-ui">
+              {!sync.online
+                ? `离线${sync.pending > 0 ? ` · ${sync.pending} 条待同步` : ''}`
+                : sync.syncing
+                  ? '同步中…'
+                  : sync.pending > 0
+                    ? `${sync.pending} 条待同步 · 点此立即同步`
+                    : '同步未完成 · 点此重试'}
+            </span>
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* ── Fragment Stream ── */}
       <div className="px-4 pb-32 pt-3">

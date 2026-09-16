@@ -2,6 +2,7 @@ import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { persistDir } from "./persist";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -18,21 +19,50 @@ function generateAndPersistSecret(): string {
   const dir = path.resolve(process.cwd(), "data");
   const file = path.join(dir, ".app-secret");
 
-  try {
-    if (fs.existsSync(file)) {
-      const existing = fs.readFileSync(file, "utf8").trim();
-      if (existing) return existing;
+  // 部署会替换整个项目目录，data/ 里的密钥同样会丢。
+  // 因此额外在"项目目录之外"的持久目录留一份，并优先读它。
+  const persistent = persistDir();
+  const persistFile = persistent ? path.join(persistent, ".app-secret") : null;
+
+  const readSecret = (target: string | null): string => {
+    if (!target) return "";
+    try {
+      if (fs.existsSync(target)) {
+        return fs.readFileSync(target, "utf8").trim();
+      }
+    } catch {
+      /* 读不到就当没有 */
     }
-  } catch {
-    /* 读不到就当没有，下面会重新生成 */
+    return "";
+  };
+
+  const existing = readSecret(persistFile) || readSecret(file);
+  if (existing) {
+    // 顺手补回可能缺失的那一份
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, existing, { mode: 0o600 });
+    } catch {
+      /* ignore */
+    }
+    return existing;
   }
 
   const secret = crypto.randomBytes(32).toString("hex");
+  let written = false;
 
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, secret, { mode: 0o600 });
-  } catch {
+  for (const target of [persistFile, file]) {
+    if (!target) continue;
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, secret, { mode: 0o600 });
+      written = true;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!written) {
     console.warn(
       "[env] WARNING: APP_SECRET 无法持久化到 data/.app-secret，" +
         "服务重启后已登录会话会失效。",

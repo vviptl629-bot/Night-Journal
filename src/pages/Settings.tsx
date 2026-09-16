@@ -28,6 +28,8 @@ import {
   Brain,
   RefreshCw,
   Play,
+  Cloud,
+  CloudOff,
 } from 'lucide-react'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -52,6 +54,7 @@ import {
 
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
+import { useSync } from '@/hooks/useSync'
 import { LOGIN_PATH } from '@/const'
 import useTheme from '@/hooks/useTheme'
 import {
@@ -1884,30 +1887,79 @@ function ThemeTab() {
    Data Tab
    ═══════════════════════════════════════════ */
 function DataTab() {
+  const sync = useSync()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmAction, setConfirmAction] = useState<'fragments' | 'diaries' | 'all' | null>(null)
   const [clearCacheOpen, setClearCacheOpen] = useState(false)
   const [exported, setExported] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [snapshots, setSnapshots] = useState<{ id: string; size: number; mtime: number }[]>([])
+  const [backingUp, setBackingUp] = useState(false)
+  const [backupMsg, setBackupMsg] = useState<string | null>(null)
 
-  const handleExport = () => {
-    // Build a JSON blob with a timestamp
-    const data = {
-      exportTime: new Date().toISOString(),
-      app: 'Night Journal',
-      version: '1.0',
-      note: 'This is a placeholder export. Full data export will be implemented on the backend.',
+  // 真正的全量导出：服务端把该用户的碎片 / 日记 / 附件打包成 JSON
+  const handleExport = async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const res = await fetch('/api/backup/export')
+      if (!res.ok) {
+        setExportError(`导出失败（${res.status}）`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `night-journal-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setExported(true)
+      setTimeout(() => setExported(false), 3000)
+    } catch {
+      setExportError('网络异常，导出失败')
+    } finally {
+      setExporting(false)
     }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `night-journal-export-${new Date().toISOString().slice(0, 10)}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    setExported(true)
-    setTimeout(() => setExported(false), 3000)
+  }
+
+  const loadSnapshots = useCallback(async () => {
+    try {
+      const res = await fetch('/api/backup/list')
+      if (!res.ok) return
+      const data = (await res.json()) as {
+        snapshots?: { id: string; size: number; mtime: number }[]
+      }
+      setSnapshots(data.snapshots ?? [])
+    } catch {
+      /* 拉不到就保持原样 */
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSnapshots()
+  }, [loadSnapshots])
+
+  const handleBackupNow = async () => {
+    setBackingUp(true)
+    setBackupMsg(null)
+    try {
+      const res = await fetch('/api/backup/now', { method: 'POST' })
+      const data = (await res.json().catch(() => ({}))) as { error?: string; snapshot?: { mtime: number } }
+      if (!res.ok) {
+        setBackupMsg(data.error ?? '备份失败')
+      } else {
+        setBackupMsg('已备份 ' + new Date(data.snapshot?.mtime ?? Date.now()).toLocaleString('zh-CN'))
+        void loadSnapshots()
+      }
+    } catch {
+      setBackupMsg('网络异常，备份失败')
+    } finally {
+      setBackingUp(false)
+    }
   }
 
   const handleDeleteConfirm = () => {
@@ -1937,6 +1989,67 @@ function DataTab() {
       initial="hidden"
       animate="visible"
     >
+      {/* 多设备同步 */}
+      <motion.div variants={cardItem}>
+        <Card
+          className="overflow-hidden rounded-2xl border-0 shadow-none"
+          style={{ backgroundColor: 'var(--bg-surface)' }}
+        >
+          <CardHeader className="px-4 pt-4 pb-0">
+            <CardTitle
+              className="text-base font-medium"
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                color: 'var(--text-primary)',
+              }}
+            >
+              多设备同步
+            </CardTitle>
+            <CardDescription style={{ color: 'var(--text-secondary)' }} className="text-xs">
+              手机与电脑登录同一账号即共用一份数据；断网时写下的内容会先存在本机，联网后自动补传
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div
+              className="mb-2 flex items-center justify-between text-xs"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {sync.online ? <Cloud size={13} /> : <CloudOff size={13} />}
+                {sync.online ? '已连接服务器' : '当前离线'}
+              </span>
+              <span>
+                {sync.lastSyncAt
+                  ? '上次同步 ' + new Date(sync.lastSyncAt).toLocaleString('zh-CN')
+                  : '尚未同步'}
+              </span>
+            </div>
+            <p className="mb-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              待同步{' '}
+              <span style={{ color: 'var(--text-primary)' }}>{sync.pending}</span> 条
+            </p>
+            <Button
+              variant="outline"
+              className="w-full gap-2 rounded-xl"
+              onClick={() => void sync.syncNow()}
+              disabled={sync.syncing}
+            >
+              {sync.syncing ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <RefreshCw size={16} />
+              )}
+              {sync.syncing ? '同步中…' : '立即同步'}
+            </Button>
+            {sync.lastError && (
+              <p className="mt-2 text-xs" style={{ color: '#D66A6A' }}>
+                {sync.lastError}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* Data Export */}
       <motion.div variants={cardItem}>
         <Card
@@ -1954,7 +2067,7 @@ function DataTab() {
               数据导出
             </CardTitle>
             <CardDescription style={{ color: 'var(--text-secondary)' }} className="text-xs">
-              将所有日记和碎片导出为 JSON 文件
+              将所有日记、碎片和附件导出为 JSON 文件
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4">
@@ -1962,8 +2075,14 @@ function DataTab() {
               className="w-full gap-2 rounded-xl"
               style={{ backgroundColor: 'var(--accent)', color: 'hsl(var(--accent-foreground))' }}
               onClick={handleExport}
+              disabled={exporting}
             >
-              {exported ? (
+              {exporting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  导出中…
+                </>
+              ) : exported ? (
                 <>
                   <Check size={16} />
                   下载已开始
@@ -1975,6 +2094,72 @@ function DataTab() {
                 </>
               )}
             </Button>
+            {exportError && (
+              <p className="mt-2 text-xs" style={{ color: 'var(--error)' }}>
+                {exportError}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Server-side snapshots */}
+      <motion.div variants={cardItem}>
+        <Card
+          className="overflow-hidden rounded-2xl border-0 shadow-none"
+          style={{ backgroundColor: 'var(--bg-surface)' }}
+        >
+          <CardHeader className="px-4 pt-4 pb-0">
+            <CardTitle
+              className="text-base font-medium"
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                color: 'var(--text-primary)',
+              }}
+            >
+              服务器备份
+            </CardTitle>
+            <CardDescription style={{ color: 'var(--text-secondary)' }} className="text-xs">
+              数据库每 5 分钟自动快照一次，存放在项目目录之外；重新部署后会自动从最新快照恢复
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 p-4">
+            <Button
+              variant="outline"
+              className="w-full gap-2 rounded-xl border"
+              style={{ borderColor: 'var(--divider)', color: 'var(--text-primary)' }}
+              onClick={handleBackupNow}
+              disabled={backingUp}
+            >
+              {backingUp ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              立即备份
+            </Button>
+            {backupMsg && (
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {backupMsg}
+              </p>
+            )}
+
+            {snapshots.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  最近 {Math.min(snapshots.length, 5)} 份快照
+                </p>
+                {snapshots.slice(0, 5).map((s) => (
+                  <a
+                    key={s.id}
+                    href={`/api/backup/download?id=${encodeURIComponent(s.id)}`}
+                    className="flex items-center justify-between rounded-lg px-2 py-2 text-xs transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <span>{new Date(s.mtime).toLocaleString('zh-CN')}</span>
+                    <span style={{ color: 'var(--text-tertiary)' }}>
+                      {(s.size / 1024).toFixed(0)} KB ↓
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
