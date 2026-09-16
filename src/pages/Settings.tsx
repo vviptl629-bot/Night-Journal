@@ -1897,6 +1897,20 @@ function DataTab() {
   const [snapshots, setSnapshots] = useState<{ id: string; size: number; mtime: number }[]>([])
   const [backingUp, setBackingUp] = useState(false)
   const [backupMsg, setBackupMsg] = useState<string | null>(null)
+  const [clientVersion, setClientVersion] = useState('')
+
+  // 手机端和电脑端界面不一致，几乎都是"某一端还在跑旧版"。
+  // 把当前 Service Worker 的缓存版本显示出来，一眼就能看出哪一端要刷新。
+  useEffect(() => {
+    if (typeof caches === 'undefined') return
+    void caches
+      .keys()
+      .then((keys) => {
+        const key = keys.find((k) => k.startsWith('night-journal-'))
+        setClientVersion(key ? key.replace('night-journal-', '') : '未启用')
+      })
+      .catch(() => setClientVersion(''))
+  }, [])
 
   // 真正的全量导出：服务端把该用户的碎片 / 日记 / 附件打包成 JSON
   const handleExport = async () => {
@@ -2256,6 +2270,7 @@ function DataTab() {
         style={{ color: 'var(--text-tertiary)', lineHeight: 1.6 }}
       >
         你的数据存储在本地设备中。日记内容不会上传至任何第三方服务器，除非你配置了自定义 AI 模型。
+        {clientVersion ? ` 客户端版本 ${clientVersion}。` : ''}
       </motion.p>
 
       {/* Confirm Dialog */}

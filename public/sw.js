@@ -11,7 +11,7 @@
  * 读到陈旧响应比读到错误响应更糟。
  */
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `night-journal-${VERSION}`;
 
 // 只预缓存体积小的外壳资源。
