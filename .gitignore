@@ -10,6 +10,9 @@ dist
 *.db
 *.sqlite
 *.sqlite3
+# SQLite WAL 模式产生的运行时文件
+*.sqlite-wal
+*.sqlite-shm
 db/migrations/*.sql
 # TypeScript cache
 *.tsbuildinfo

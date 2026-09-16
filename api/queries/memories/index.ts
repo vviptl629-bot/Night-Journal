@@ -23,11 +23,11 @@ export interface ProfileUpdate {
 }
 
 /**
- * Atomically upsert the user profile using INSERT ... ON DUPLICATE KEY
+ * Atomically upsert the user profile using INSERT ... ON CONFLICT DO
  * UPDATE (relies on the `user_id` UNIQUE constraint).
  *
  * On insert: all fields written as-is, version defaults to 1.
- * On update: each field is set to IFNULL(VALUES(col), col) — if the new
+ * On update: each field is set to IFNULL(excluded.col, col) — if the new
  * value is NULL, the existing value is preserved. version is atomically
  * incremented. This eliminates the read-then-write TOCTOU race that the
  * previous implementation had when two Dream passes ran concurrently.
@@ -45,13 +45,15 @@ export async function upsertProfile(userId: number, data: ProfileUpdate) {
       languageStyle: data.languageStyle ?? null,
       summary: data.summary ?? null,
     })
-    .onDuplicateKeyUpdate({
+    .onConflictDoUpdate({
+      target: userProfiles.userId,
       set: {
-        persona: sql`IFNULL(VALUES(persona), persona)`,
-        relationships: sql`IFNULL(VALUES(relationships), relationships)`,
-        emotionalTone: sql`IFNULL(VALUES(emotional_tone), emotional_tone)`,
-        languageStyle: sql`IFNULL(VALUES(language_style), language_style)`,
-        summary: sql`IFNULL(VALUES(summary), summary)`,
+        // SQLite 用 excluded.<col> 表示"本次本应插入的值"（对应 MySQL 的 VALUES(col)）
+        persona: sql`IFNULL(excluded.persona, ${userProfiles.persona})`,
+        relationships: sql`IFNULL(excluded.relationships, ${userProfiles.relationships})`,
+        emotionalTone: sql`IFNULL(excluded.emotional_tone, ${userProfiles.emotionalTone})`,
+        languageStyle: sql`IFNULL(excluded.language_style, ${userProfiles.languageStyle})`,
+        summary: sql`IFNULL(excluded.summary, ${userProfiles.summary})`,
         version: sql`${userProfiles.version} + 1`,
       },
     });
@@ -89,7 +91,7 @@ const SHORT_TERM_DECAY_DAYS = 14;
 /**
  * Merge newly extracted short-term memories into storage atomically.
  *
- * Uses INSERT ... ON DUPLICATE KEY UPDATE with the `(user_id, content)`
+ * Uses INSERT ... ON CONFLICT DO UPDATE with the `(user_id, content)`
  * unique index. On conflict (existing row with same content):
  *  - lastReferencedAt always refreshed (it was referenced)
  *  - decayAt extended by 14 days ONLY if firstSeenAt is under 30 days old
@@ -102,6 +104,9 @@ export async function mergeShortTermMemories(userId: number, inputs: ShortTermMe
   const db = getDb();
   const now = new Date();
   const decayAt = new Date(now.getTime() + SHORT_TERM_DECAY_DAYS * 24 * 60 * 60 * 1000);
+  // better-sqlite3 不接受 Date 作为绑定参数，裸 SQL 里必须显式传 Unix 秒。
+  const decayAtSeconds = Math.floor(decayAt.getTime() / 1000);
+  const maxAgeSeconds = SHORT_TERM_MAX_AGE_DAYS * 24 * 60 * 60;
 
   for (const input of inputs) {
     const content = input.content.trim();
@@ -118,14 +123,15 @@ export async function mergeShortTermMemories(userId: number, inputs: ShortTermMe
         lastReferencedAt: now,
         decayAt,
       })
-      .onDuplicateKeyUpdate({
+      .onConflictDoUpdate({
+        target: [shortTermMemories.userId, shortTermMemories.content],
         set: {
           lastReferencedAt: now,
-          // Only extend decay if the memory is under the max age cap.
-          // Over-cap memories keep their existing decayAt so they
-          // eventually expire and get deleted.
-          decayAt: sql`IF(TIMESTAMPDIFF(DAY, first_seen_at, NOW()) > ${SHORT_TERM_MAX_AGE_DAYS}, decay_at, ${decayAt})`,
-          importance: sql`GREATEST(importance, ${input.importance})`,
+          // 只在记忆未超过年龄上限时续期；超限的保留原 decay_at，
+          // 让它自然到期后被清理。
+          // first_seen_at 存的是 Unix 秒，所以年龄用秒差比较。
+          decayAt: sql`CASE WHEN (unixepoch() - first_seen_at) > ${maxAgeSeconds} THEN decay_at ELSE ${decayAtSeconds} END`,
+          importance: sql`MAX(importance, ${input.importance})`,
         },
       });
   }
@@ -169,7 +175,8 @@ export async function archiveExpiredMemories(userId?: number): Promise<number> {
     .delete(shortTermMemories)
     .where(and(...conditions));
 
-  const affected = (result as unknown as { affectedRows?: number }).affectedRows;
+  // better-sqlite3 写操作返回 { changes, lastInsertRowid }（MySQL 是 affectedRows）
+  const affected = (result as unknown as { changes?: number }).changes;
   return typeof affected === "number" ? affected : 0;
 }
 

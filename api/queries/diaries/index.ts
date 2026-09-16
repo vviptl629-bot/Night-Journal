@@ -1,5 +1,6 @@
 import { eq, and, desc, gte, lt } from "drizzle-orm";
 import { getDb } from "../connection";
+import { monthRange, todayKey } from "../../lib/date";
 import { diaries, diaryVersions } from "@db/schema";
 
 // ─── Diaries ───────────────────────────────────────────────────────
@@ -15,8 +16,7 @@ export async function findDiariesByUser(userId: number, limit: number, offset: n
 }
 
 export async function findDiariesByMonth(userId: number, year: number, month: number) {
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 1);
+  const { start, end } = monthRange(year, month);
 
   return getDb()
     .select()
@@ -24,8 +24,8 @@ export async function findDiariesByMonth(userId: number, year: number, month: nu
     .where(
       and(
         eq(diaries.userId, userId),
-        gte(diaries.diaryDate, startDate),
-        lt(diaries.diaryDate, endDate),
+        gte(diaries.diaryDate, start),
+        lt(diaries.diaryDate, end),
       ),
     )
     .orderBy(desc(diaries.diaryDate));
@@ -35,7 +35,7 @@ export async function findDiaryByDate(userId: number, date: string) {
   const rows = await getDb()
     .select()
     .from(diaries)
-    .where(and(eq(diaries.userId, userId), eq(diaries.diaryDate, new Date(date))))
+    .where(and(eq(diaries.userId, userId), eq(diaries.diaryDate, date)))
     .limit(1);
   return rows.at(0);
 }
@@ -57,6 +57,8 @@ export async function findDiaryById(userId: number, diaryId: number) {
 export async function findRecentGeneratedDiaries(userId: number, days: number) {
   const since = new Date();
   since.setDate(since.getDate() - days);
+  // diaryDate 是 YYYY-MM-DD 文本列，必须传字符串而非 Date。
+  const sinceKey = todayKey(since);
 
   return getDb()
     .select({
@@ -69,7 +71,7 @@ export async function findRecentGeneratedDiaries(userId: number, days: number) {
     .where(
       and(
         eq(diaries.userId, userId),
-        gte(diaries.diaryDate, since),
+        gte(diaries.diaryDate, sinceKey),
         eq(diaries.generationStatus, "generated"),
       ),
     )
@@ -115,7 +117,7 @@ export async function createDiary(
     .insert(diaries)
     .values({
       userId,
-      diaryDate: new Date(data.diaryDate),
+      diaryDate: data.diaryDate,
       title: data.title ?? null,
       summary: data.summary ?? null,
       content: data.content ?? null,
@@ -124,7 +126,7 @@ export async function createDiary(
       diaryModelUsed: data.diaryModelUsed ?? null,
       generationStatus: data.generationStatus ?? "pending",
     })
-    .$returningId();
+    .returning({ id: diaries.id });
 
   const diary = await db.query.diaries.findFirst({
     where: eq(diaries.id, id),
@@ -225,7 +227,7 @@ export async function createDiaryVersion(
       diaryModelUsed: data.diaryModelUsed ?? null,
       promptSnapshot: data.promptSnapshot ?? null,
     })
-    .$returningId();
+    .returning({ id: diaryVersions.id });
 
   const version = await db.query.diaryVersions.findFirst({
     where: eq(diaryVersions.id, id),

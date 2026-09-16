@@ -47,7 +47,7 @@ export async function createPreset(
       apiKey: encrypted.apiKey,
       model: encrypted.model,
     })
-    .$returningId();
+    .returning({ id: modelPresets.id });
 
   return db.query.modelPresets.findFirst({
     where: eq(modelPresets.id, id),

@@ -103,11 +103,19 @@ export default app;
 if (env.isProduction) {
   const { serve } = await import("@hono/node-server");
   const { serveStaticFiles } = await import("./lib/vite");
+  const { ensureSchema } = await import("./lib/ensure-schema");
+
+  // 建表必须在开始对外服务之前完成，否则第一批请求会打到空库。
+  const driverKind = ensureSchema();
+  console.log(`[boot] SQLite schema ready (driver: ${driverKind})`);
+
   serveStaticFiles(app);
 
   const port = parseInt(process.env.PORT || "3000");
-  serve({ fetch: app.fetch, port }, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  // 显式绑定 0.0.0.0：容器/沙箱里的反向代理需要从外部访问该端口，
+  // 只绑 localhost 会导致部署后无法被访问。
+  serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
 }
 

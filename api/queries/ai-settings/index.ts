@@ -62,7 +62,7 @@ export async function upsertAiSettings(
       userId,
       ...encrypted,
     } as InsertAiSettings)
-    .$returningId();
+    .returning({ id: aiSettings.id });
 
   const settings = await db.query.aiSettings.findFirst({
     where: eq(aiSettings.id, id),

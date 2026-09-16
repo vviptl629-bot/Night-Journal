@@ -1,5 +1,6 @@
 import { eq, and, isNull, desc, gte, lt } from "drizzle-orm";
 import { getDb } from "../connection";
+import { monthRange } from "../../lib/date";
 import { entries, entryAttachments } from "@db/schema";
 
 // ─── Entries ───────────────────────────────────────────────────────
@@ -12,7 +13,7 @@ export async function findEntriesByDate(userId: number, date: string) {
     .where(
       and(
         eq(entries.userId, userId),
-        eq(entries.entryDate, new Date(date)),
+        eq(entries.entryDate, date),
         isNull(entries.deletedAt),
       ),
     )
@@ -59,9 +60,9 @@ export async function createEntry(
       userId,
       contentText: data.contentText,
       moodLabel: data.moodLabel,
-      entryDate: new Date(data.entryDate),
+      entryDate: data.entryDate,
     })
-    .$returningId();
+    .returning({ id: entries.id });
 
   const entry = await db.query.entries.findFirst({
     where: eq(entries.id, id),
@@ -79,7 +80,7 @@ export async function updateEntry(
   const updateData: Record<string, unknown> = {};
   if (data.contentText !== undefined) updateData.contentText = data.contentText;
   if (data.moodLabel !== undefined) updateData.moodLabel = data.moodLabel;
-  if (data.entryDate !== undefined) updateData.entryDate = new Date(data.entryDate);
+  if (data.entryDate !== undefined) updateData.entryDate = data.entryDate;
   if (data.includedInDiary !== undefined) updateData.includedInDiary = data.includedInDiary;
 
   await db
@@ -98,8 +99,7 @@ export async function updateEntry(
 
 export async function findEntriesByMonth(userId: number, year: number, month: number) {
   const db = getDb();
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 1);
+  const { start, end } = monthRange(year, month);
 
   const userEntries = await db
     .select({
@@ -118,8 +118,8 @@ export async function findEntriesByMonth(userId: number, year: number, month: nu
     .where(
       and(
         eq(entries.userId, userId),
-        gte(entries.entryDate, startDate),
-        lt(entries.entryDate, endDate),
+        gte(entries.entryDate, start),
+        lt(entries.entryDate, end),
         isNull(entries.deletedAt),
       ),
     )
@@ -202,7 +202,7 @@ export async function createAttachment(
       fileName: data.fileName,
       storagePath: data.storagePath,
     })
-    .$returningId();
+    .returning({ id: entryAttachments.id });
 
   // Mark entry as having images
   await db
