@@ -54,9 +54,33 @@ function validateInput(
   return null;
 }
 
-/** Trims + collapses inner whitespace, so a stray trailing space never blocks login. */
+/**
+ * 用户名归一：trim + 折叠空白 + NFKC + 去掉零宽字符。
+ *
+ * NFKC 这一步很关键：中文输入法下打英文名容易出全角字母（Ｔｒａｄｅｒ），
+ * 注册时存了全角、登录时打半角就会一直"密码错误"，其实错的是用户名。
+ */
 function normalizeUsername(raw: unknown): string {
-  return typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+  if (typeof raw !== "string") return "";
+  return raw
+    .normalize("NFKC")
+    // 零宽/不可见字符（输入法、复制粘贴带入）
+    .replace(/[​-‍﻿]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * 密码候选：原样 + NFKC + 去首尾空格的组合。
+ *
+ * 手机输入法和自动填充经常在密码尾部带一个空格，或者输入法半角/全角状态
+ * 不一致。逐一比对可以把这类"明明没输错却登不上"的情况兜住。
+ * 个人自托管场景下这点宽松度换来的可用性是值得的。
+ */
+function passwordCandidates(raw: string): string[] {
+  const nfkc = raw.normalize("NFKC");
+  const list = [raw, raw.trim(), nfkc, nfkc.trim()];
+  return [...new Set(list)].filter((p) => p.length > 0);
 }
 
 /**
@@ -139,15 +163,28 @@ export function createLoginHandler() {
     const cleanUsername = normalizeUsername(username);
     const user = await findUserByUsername(cleanUsername);
 
-    // Always run bcrypt.compare to prevent timing-based username enumeration
+    // 用户名不存在时也要跑一次 bcrypt，避免通过响应耗时枚举用户名
     const hashToCompare = user?.passwordHash ?? DUMMY_HASH;
-    const match = await bcrypt.compare(
-      bcryptInput(password as string),
-      hashToCompare,
-    );
+    let match = false;
+    for (const candidate of passwordCandidates(password as string)) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await bcrypt.compare(bcryptInput(candidate), hashToCompare)) {
+        match = true;
+        break;
+      }
+    }
 
     if (!user || !match) {
-      return c.json({ error: "用户名或密码不正确" }, 401);
+      // 单机自用场景，明确区分"没这个号"和"密码不对"比防枚举更有价值 ——
+      // 否则用户会一直怀疑自己记错密码，其实是账号根本不存在（例如被部署冲掉了）。
+      return c.json(
+        {
+          error: !user
+            ? "这个用户名还没有注册，先去注册一个吧"
+            : "密码不对，再试一次",
+        },
+        401,
+      );
     }
 
     const token = await signSessionToken({

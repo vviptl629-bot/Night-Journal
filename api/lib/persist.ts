@@ -68,6 +68,83 @@ export function persistDir(): string | null {
   return null;
 }
 
+/** 主库文件名（`dataRoot()` 目录内）。 */
+export const DB_FILE_NAME = "night-journal.sqlite";
+
+let cachedRoot: string | null = null;
+
+/**
+ * 运行时数据的根目录 —— **必须在项目目录之外**。
+ *
+ * `data/` 在项目目录里，重新部署会整块替换掉，里面的 SQLite 主库和上传的
+ * 图片会一起消失（实测：发布一次，刚注册的账号就没了）。所以主库、上传目录
+ * 都放到这里。
+ *
+ * 选择策略：优先选**已经存有数据**的候选目录，避免在"上次用的是兜底目录、
+ * 这次上级目录又可写了"这种情况下找不到旧数据；都不含数据时取第一个可写的。
+ */
+export function dataRoot(): string | null {
+  if (cachedRoot) return cachedRoot;
+
+  const candidates = persistDirCandidates();
+  for (const dir of candidates) {
+    try {
+      if (fs.existsSync(path.join(dir, DB_FILE_NAME))) {
+        cachedRoot = dir;
+        return dir;
+      }
+    } catch {
+      /* 读不到就继续找 */
+    }
+  }
+
+  cachedRoot = persistDir();
+  return cachedRoot;
+}
+
+/** 上传目录名（`dataRoot()` 目录内）。 */
+export const UPLOAD_DIR_NAME = "uploads";
+
+export function uploadsRoot(): string | null {
+  const root = dataRoot();
+  return root ? path.join(root, UPLOAD_DIR_NAME) : null;
+}
+
+/**
+ * 一次性迁移：把旧的项目目录内数据搬到持久目录。
+ * 只在目标不存在、源存在时复制，重复调用无副作用。
+ */
+export function migrateIntoDataRoot(fileName: string): void {
+  const root = dataRoot();
+  if (!root) return;
+
+  const legacy = path.resolve(process.cwd(), "data", fileName);
+  const target = path.join(root, fileName);
+  if (fs.existsSync(target) || !fs.existsSync(legacy)) return;
+
+  try {
+    const stat = fs.statSync(legacy);
+    if (stat.isDirectory()) {
+      fs.cpSync(legacy, target, { recursive: true });
+    } else {
+      fs.mkdirSync(root, { recursive: true });
+      fs.copyFileSync(legacy, target);
+      // WAL 模式下 -wal / -shm 里可能还有未 checkpoint 的提交，一并搬走
+      for (const suffix of ["-wal", "-shm"]) {
+        const extra = legacy + suffix;
+        if (fs.existsSync(extra)) {
+          fs.copyFileSync(extra, target + suffix);
+        }
+      }
+    }
+    console.log(`[persist] 已将旧数据迁移到持久目录: ${legacy} -> ${target}`);
+  } catch (e) {
+    console.warn(
+      `[persist] WARNING: 迁移 ${fileName} 失败: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
 function snapshotsDir(): string | null {
   const dir = persistDir();
   if (!dir) return null;

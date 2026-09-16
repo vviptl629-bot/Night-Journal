@@ -2,7 +2,13 @@ import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { persistDir } from "./persist";
+import {
+  persistDir,
+  dataRoot,
+  migrateIntoDataRoot,
+  restoreDatabase,
+  DB_FILE_NAME,
+} from "./persist";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -95,7 +101,8 @@ function required(name: string): string {
  * 解析 SQLite 数据库文件位置。
  *
  * 支持三种写法：
- *   - 未设置 DATABASE_URL      -> ./data/night-journal.sqlite
+ *   - 未设置 DATABASE_URL      -> <持久目录>/night-journal.sqlite
+ *                                 （持久目录在项目目录之外，见 lib/persist.ts）
  *   - "file:./data/app.sqlite" -> 去掉 file: 前缀
  *   - "./data/app.sqlite"      -> 直接当路径
  *
@@ -105,7 +112,23 @@ function required(name: string): string {
 function resolveDatabaseFile(): string {
   const raw = process.env.DATABASE_URL?.trim();
   if (!raw) {
-    return path.resolve(process.cwd(), "data", "night-journal.sqlite");
+    // 主库默认放在**项目目录之外**的持久目录，避免重新部署时被整块替换。
+    const root = dataRoot();
+    const legacy = path.resolve(process.cwd(), "data", DB_FILE_NAME);
+    if (!root) return legacy;
+
+    const target = path.join(root, DB_FILE_NAME);
+    if (fs.existsSync(target)) return target;
+
+    // 目标位置没有库时的优先级：
+    //   1. 持久目录里的快照 —— 那才是线上真实数据
+    //   2. 旧的项目目录内 data/ 副本（本机开发时用）
+    // 顺序不能反：部署会把本机 data/ 一起上传，若优先迁移它，
+    // 反而会用开发机的库覆盖线上数据。
+    if (!restoreDatabase(target)) {
+      migrateIntoDataRoot(DB_FILE_NAME);
+    }
+    return target;
   }
 
   const withoutScheme = raw.startsWith("file:")

@@ -256,12 +256,12 @@ describe("POST /api/auth/login — wrong password", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json() as { error: string };
-    expect(body.error).toMatch(/不正确/);
+    expect(body.error).toMatch(/密码不对/);
   });
 });
 
 describe("POST /api/auth/login — unknown username", () => {
-  it("returns 401 (not 404) to avoid username enumeration", async () => {
+  it("still returns 401, but says the username is not registered", async () => {
     vi.mocked(findUserByUsername).mockResolvedValue(undefined);
 
     const res = await post(buildLoginApp(), "/api/auth/login", {
@@ -271,9 +271,8 @@ describe("POST /api/auth/login — unknown username", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json() as { error: string };
-    // Same generic message as wrong-password — does not reveal whether username exists
-    expect(body.error).toMatch(/不正确/);
-    expect(body.error).not.toMatch(/not found/i);
-    expect(body.error).not.toMatch(/does not exist/i);
+    // 单机自用：说清楚"没这个号"比含糊的"用户名或密码不正确"有用得多，
+    // 否则用户会一直怀疑自己记错密码，其实是账号不存在。
+    expect(body.error).toMatch(/还没有注册/);
   });
 });

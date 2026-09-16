@@ -1,11 +1,25 @@
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import { uploadsRoot, migrateIntoDataRoot, UPLOAD_DIR_NAME } from "./persist";
 
-const UPLOAD_DIR = path.resolve(
-  process.cwd(),
-  process.env.UPLOAD_DIR || "data/uploads",
-);
+/**
+ * 上传目录默认也放在**项目目录之外**的持久目录里 —— 否则重新部署会把
+ * 用户贴过的图片一起抹掉。首次启动会把旧的 data/uploads 迁移过去。
+ */
+function resolveUploadDir(): string {
+  if (process.env.UPLOAD_DIR?.trim()) {
+    return path.resolve(process.cwd(), process.env.UPLOAD_DIR.trim());
+  }
+  const root = uploadsRoot();
+  if (!root) {
+    return path.resolve(process.cwd(), "data", UPLOAD_DIR_NAME);
+  }
+  migrateIntoDataRoot(UPLOAD_DIR_NAME);
+  return root;
+}
+
+const UPLOAD_DIR = resolveUploadDir();
 
 export const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 

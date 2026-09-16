@@ -3,14 +3,15 @@
  * 策略总览：
  *   - 应用外壳（图标/manifest）安装时预缓存
  *   - 页面导航：network-first，离线时回退到缓存的 index.html
- *   - 静态资源（/assets/*、图片、字体）：stale-while-revalidate
+ *   - JS/CSS（/assets/*）：network-first，离线回退缓存（保证在线时永远最新）
+ *   - 图片、字体：stale-while-revalidate
  *   - /api/*：完全不缓存，永远走网络
  *
  * 注意：任何 /api/ 请求都不进缓存 —— 日记是私人数据，
  * 读到陈旧响应比读到错误响应更糟。
  */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `night-journal-${VERSION}`;
 
 // 只预缓存体积小的外壳资源。
@@ -101,7 +102,31 @@ self.addEventListener('fetch', (event) => {
 
   if (!isStaticAsset(url)) return;
 
-  // 静态资源：先给缓存（快），后台同时更新
+  // JS/CSS（/assets/* 都带内容哈希）走**网络优先**：
+  // 只要在线就一定拿到最新版本，离线才回退缓存。
+  // 之前这里是"先给缓存"，导致手机 PWA 装过一次后就可能一直跑旧代码 ——
+  // 表现就是手机和网页的界面内容对不上。
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE);
+        try {
+          const response = await fetch(request);
+          if (response && response.status === 200 && response.type === 'basic') {
+            cache.put(request, response.clone());
+          }
+          return response;
+        } catch {
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          return new Response('', { status: 504, statusText: 'Offline' });
+        }
+      })()
+    );
+    return;
+  }
+
+  // 其余静态资源（图片/字体）：先给缓存（快），后台同时更新
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
