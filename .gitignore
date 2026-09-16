@@ -26,3 +26,5 @@ coverage/
 *.log
 # Uploaded files
 data/uploads/
+# Smoke test output
+smoke-result.txt

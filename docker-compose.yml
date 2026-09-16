@@ -9,38 +9,16 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${PORT:-3000}
-      # Required
-      APP_SECRET: ${APP_SECRET}
-      DATABASE_URL: ${DATABASE_URL:-mysql://nightjournal:nightjournal@db:3306/nightjournal}
-      # Optional
+      # Optional — if unset, a secret is generated once and persisted to
+      # data/.app-secret, so existing sessions survive restarts.
+      APP_SECRET: ${APP_SECRET:-}
+      # Optional — SQLite file location. Defaults to ./data/night-journal.sqlite
+      DATABASE_URL: ${DATABASE_URL:-}
       OWNER_UNION_ID: ${OWNER_UNION_ID:-}
     volumes:
+      # Persists the embedded SQLite database and generated APP_SECRET.
       - app_data:/app/data
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  db:
-    image: mysql:8.4
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: nightjournal
-      MYSQL_USER: nightjournal
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-nightjournal}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    ports:
-      # Only expose locally for debugging; remove in production
-      - "127.0.0.1:3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "nightjournal", "-pnightjournal"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
     restart: unless-stopped
 
 volumes:
-  mysql_data:
   app_data:
